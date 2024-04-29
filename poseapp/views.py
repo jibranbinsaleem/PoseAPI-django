@@ -1,23 +1,35 @@
-from django.shortcuts import render
 
-# Create your views here.
-from django.http import HttpResponse, JsonResponse
 from PIL import Image
 import io
 import secrets
 
+#django imports
+from django.shortcuts import render
+from django.http import HttpResponse, JsonResponse
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.core.exceptions import ObjectDoesNotExist
+
+## DRF imports
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from rest_framework.decorators import authentication_classes, permission_classes
+from rest_framework.parsers import MultiPartParser, FormParser
+
+
+
+##Import from custom files
 from .models import APIKey, User
 from .serializers import UserSerializer, GenerateApiKeySerializer
+from .functions import inferpoints
+from .authentication import api_key_required, admin_required
+
+##documentation imports
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
-from .functions import inferpoints
+
 
 
 
@@ -30,6 +42,22 @@ def allowed_file(filename):
 
 def index(request):
     return HttpResponse("Welcome to PoseApp!")
+
+
+
+api_key_param = openapi.Parameter(
+    'X-API-KEY', 
+    in_=openapi.IN_HEADER, 
+    description='API key for authentication', 
+    type=openapi.TYPE_STRING
+)
+
+api_secret_param = openapi.Parameter(
+    'X-API-SECRET', 
+    in_=openapi.IN_HEADER, 
+    description='API secret for authentication', 
+    type=openapi.TYPE_STRING
+)
 
 @swagger_auto_schema(
     method='post',
@@ -45,6 +73,7 @@ def index(request):
     },
 )
 @api_view(['POST'])
+@admin_required
 def register_user(request):
     serializer = UserSerializer(data=request.data)
     if serializer.is_valid():
@@ -70,15 +99,16 @@ def register_user(request):
     },
 )
 @api_view(['POST'])
+@admin_required
 def generate_api_key(request):
     serializer = GenerateApiKeySerializer(data=request.data)
     if serializer.is_valid():
-        username = serializer.validated_data['username']
+        # username = serializer.validated_data['username']
         email = serializer.validated_data['email']
         firebase_id = serializer.validated_data['firebase_id']
 
         try:
-            user = User.objects.get(username=username, email=email, firebase_id=firebase_id)
+            user = User.objects.get(email=email, firebase_id=firebase_id)
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -93,11 +123,48 @@ def generate_api_key(request):
             return Response({"error": "User is not active"}, status=status.HTTP_403_FORBIDDEN)
     else:
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     
 
 
+
+@swagger_auto_schema(
+    method='post',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['file', 'X-API-KEY', 'X-API-SECRET'],
+        properties={
+            'file': openapi.Schema(type=openapi.TYPE_FILE, format=openapi.FORMAT_BINARY),
+            'X-API-KEY': openapi.Schema(type=openapi.TYPE_STRING),
+            'X-API-SECRET': openapi.Schema(type=openapi.TYPE_STRING),
+        },
+    ),
+    responses={
+        200: openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'keypoints': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'keypoints': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_ARRAY,
+                                items=openapi.Schema(type=openapi.TYPE_NUMBER),
+                            ),
+                        ),
+                    },
+                ),
+            },
+        ),
+        400: 'Bad request',
+        500: 'Server error',
+    },
+)
 @api_view(['POST'])
+@api_key_required
 def infer(request):
+    print(request.headers)
     try:
         if 'file' not in request.FILES:
             return JsonResponse({"error": "No file part in the request"}, status=400)
@@ -115,7 +182,8 @@ def infer(request):
             input_image = Image.open(io.BytesIO(file.read()))
 
             # Process the image
-            keypoints = inferpoints(input_image)
+            # keypoints = inferpoints(input_image)
+            keypoints = 123
 
             return JsonResponse(keypoints, safe=False, status=200)
 

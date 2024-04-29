@@ -15,17 +15,17 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
 class GenerateApiKeySerializer(serializers.Serializer):
-    username = serializers.CharField(max_length=150)
+    # username = serializers.CharField(max_length=150)
     email = serializers.EmailField()
     firebase_id = serializers.CharField(max_length=100)
 
     def validate(self, data):
-        username = data.get('username')
+        # username = data.get('username')
         email = data.get('email')
         firebase_id = data.get('firebase_id')
 
         try:
-            user = User.objects.get(username=username, email=email, firebase_id=firebase_id)
+            user = User.objects.get(email=email, firebase_id=firebase_id)
         except User.DoesNotExist:
             raise serializers.ValidationError("User does not exist")
 
